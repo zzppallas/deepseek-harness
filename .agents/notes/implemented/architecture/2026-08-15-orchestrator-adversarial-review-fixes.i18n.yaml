@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-15-orchestrator-adversarial-review-fixes.md
+2026-08-15-orchestrator-adversarial-review-fixes.md: 37c41e997bc2056c7da0e22c60a80d35626f128a
+2026-08-15-orchestrator-adversarial-review-fixes.zh.md: 72501ba331e55f57c848dacecebbc63c4d934038

@@ -66,6 +66,24 @@
       config:
         maxNoteBytes: 8192
 
+    # Central orchestrator pipeline sidecar: state + artifacts live here in
+    # DSH storage, never in the project working tree.
+    - id: orchestrator
+      name: '@deepseek-ai/dsh-orchestrator'
+      config:
+        maxArtifactBytes: 262144
+
+    # Model-facing orchestrator pipeline tools over the sidecar service.
+    # Per-role model routing for role children; roles without an entry inherit
+    # the session default. Example:
+    #   roles:
+    #     architect: { model: deepseek-reasoner }
+    #     coder: { model: deepseek-chat }
+    - id: tool-orchestrator
+      name: '@deepseek-ai/dsh-tool-orchestrator'
+      config:
+        subagentProvider: spawn
+
     # Browser Session export: `/export` command plus the shared download dialog.
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
@@ -245,6 +263,11 @@
     # assistant-message action strip, over the messageFeedback Remote.
     - id: ui-message-feedback
       name: '@deepseek-ai/dsh-client-ui-message-feedback'
+
+    # Orchestrator pipelines browser in the sidebar footer, over the
+    # orchestrator Remote: lifecycle filters, stage timeline, artifact viewer.
+    - id: ui-orchestrator
+      name: '@deepseek-ai/dsh-client-ui-orchestrator'
 
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection

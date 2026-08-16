@@ -7,7 +7,9 @@
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -19,6 +21,11 @@ import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import Storage from '@deepseek-ai/dsh-storage'
+import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
+import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import OrchestratorService from '@deepseek-ai/dsh-orchestrator'
 import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
@@ -61,6 +68,7 @@ import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
+import * as ToolOrchestrator from '@deepseek-ai/dsh-tool-orchestrator'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import { githubSlug } from './verify-md-links.ts'
@@ -389,6 +397,26 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-orchestrator',
+    dir: 'tool-orchestrator',
+    source: 'packages/orchestrator/tool-orchestrator/src/index.ts',
+    requires: ['ctx.tools', 'ctx.orchestrator', 'ctx.subagents', 'ctx.systemPrompt', 'ctx.llm'],
+    writes: ['tool/call', 'central orchestrator pipeline mutations during execution', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(LlmRuntime)
+      await ctx.plugin(SubagentRuntime)
+      registerCatalogSubagentProvider(ctx, 'mock')
+      const storageRoot = await mkdtemp(join(tmpdir(), 'dsh-tool-catalog-orchestrator-'))
+      await ctx.plugin(Storage)
+      await ctx.plugin(StorageJson, { root: storageRoot })
+      await ctx.plugin(StorageDomain, { backend: 'json' })
+      await ctx.plugin(OrchestratorService, { maxArtifactBytes: 262_144 })
+      await ctx.plugin(ToolOrchestrator, { subagentProvider: 'mock' })
+    },
+    note:
+      'The orchestrator tool family drives the central pipeline sidecar (state and artifacts live in DSH storage, never the working tree); orchestrator_dispatch spawns role children through the configured subagent provider, and orchestrator_capture_vcs samples git HEAD plus dirty listing through the no-shell runner boundary.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',

@@ -29,6 +29,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
+| `@deepseek-ai/dsh-tool-orchestrator` | `orchestrator_capture_vcs`, `orchestrator_dispatch`, `orchestrator_freeze_candidate`, `orchestrator_freeze_goal`, `orchestrator_lifecycle`, `orchestrator_stage_report`, `orchestrator_start`, `orchestrator_state` | `ctx.tools`, `ctx.orchestrator`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.llm` | `tool/call`, `central orchestrator pipeline mutations during execution`, `tool/result` | - | The orchestrator tool family drives the central pipeline sidecar (state and artifacts live in DSH storage, never the working tree); orchestrator_dispatch spawns role children through the configured subagent provider, and orchestrator_capture_vcs samples git HEAD plus dirty listing through the no-shell runner boundary. |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
@@ -1176,6 +1177,308 @@ Query a language server for precise code navigation. operation is one of goToDef
 Source: [`packages/lsp/tool-lsp/src/index.ts`](../packages/lsp/tool-lsp/src/index.ts)
 
 The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.
+
+<a id="deepseek-aidsh-tool-orchestrator"></a>
+
+## `@deepseek-ai/dsh-tool-orchestrator`
+
+### `orchestrator_capture_vcs`
+
+Sample the pipeline project's version-control state (git HEAD + dirty listing, no shell) and bind it to the pipeline: purpose baseline anchors the start (only before the goal freezes), purpose candidate stages the anchor the next freeze_candidate binds. Fails loudly when the project is not a git work tree.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string",
+      "description": "Pipeline to bind the snapshot to."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "baseline | candidate."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "purpose"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_dispatch`
+
+Dispatch one role subagent for the current stage. Per-role provider/model routing comes from deployment config; call overrides are validated against the live model catalog before the child starts.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "description": "architect | reviewer | coder | coverage-reviewer | code-reviewer | qa | auditor."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Complete self-contained role prompt: goal anchor, stage inputs, stage duties, required output document."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Optional provider override for this one dispatch."
+    },
+    "model": {
+      "type": "string",
+      "description": "Optional model override for this one dispatch."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "role",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_freeze_candidate`
+
+Freeze the implementation candidate (64-hex subject hash, e.g. a workspace manifest aggregate) at the S3→S4 boundary; S4/S5/S6A PASS binds approvals to it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "subjectHash": {
+      "type": "string",
+      "description": "Lowercase 64-hex sha256 of the candidate subject."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "subjectHash"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_freeze_goal`
+
+Finalize the S0 goal/task drafts and freeze the goal hash. After this the goal is immutable; the pipeline advances to S1 (FULL) or S3 (LITE).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string",
+      "description": "Final goal text (required when the draft needs edits)."
+    },
+    "task": {
+      "type": "string",
+      "description": "Final task brief."
+    }
+  },
+  "required": [
+    "pipelineId"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_lifecycle`
+
+Void or supersede a pipeline: revoke (post-complete defect; names the repairs pipeline) or supersede (a sealed pipeline replaced by a successor).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "description": "revoke | supersede."
+    },
+    "successorId": {
+      "type": "string",
+      "description": "Successor pipeline id (supersede)."
+    },
+    "repairsPipeline": {
+      "type": "string",
+      "description": "Repairs pipeline id (revoke)."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "action"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_stage_report`
+
+Record stage artifacts and the stage verdict. PASS advances; BLOCK/FAIL rolls back per the gate rules (S4/S5/S6A rollback invalidates candidate and approvals); COMPLETE (S6B only) seals the pipeline.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string",
+      "description": "S0..S6B being reported."
+    },
+    "verdict": {
+      "type": "string",
+      "description": "PASS | BLOCK | FAIL | COMPLETE."
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Artifacts to record into the stage before the verdict.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Artifact kind from the taxonomy."
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "content"
+        ]
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "description": "BLOCK items (required for BLOCK verdicts): level (Critical|Scoped), location, description.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "concession": {
+      "type": "object",
+      "description": "Optional registered concession when the verdict carries debt.",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": [
+    "pipelineId",
+    "phase",
+    "verdict"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_start`
+
+Create one orchestrator pipeline at S0 with goal/task drafts. The goal stays editable until orchestrator_freeze_goal.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Short kebab-case pipeline name."
+    },
+    "mode": {
+      "type": "string",
+      "description": "FULL (six-role spine, default) or LITE (merged S1/S2, lighter S3)."
+    },
+    "riskClass": {
+      "type": "string",
+      "description": "LOW | STRUCTURAL | STATEFUL | CRITICAL (default LOW)."
+    },
+    "goal": {
+      "type": "string",
+      "description": "Verbatim goal text; quote the human request and the Definition of Done."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task brief: gate commands, boundaries, protocol surface."
+    }
+  },
+  "required": [
+    "name",
+    "goal"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_state`
+
+Inspect pipelines: one full row (stage verdicts, dispatch models, artifacts) by id, or the summary list for a project root.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "projectRoot": {
+      "type": "string",
+      "description": "Filter for list mode."
+    }
+  }
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+The orchestrator tool family drives the central pipeline sidecar (state and artifacts live in DSH storage, never the working tree); orchestrator_dispatch spawns role children through the configured subagent provider, and orchestrator_capture_vcs samples git HEAD plus dirty listing through the no-shell runner boundary.
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 

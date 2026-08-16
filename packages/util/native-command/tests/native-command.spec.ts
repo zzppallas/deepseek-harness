@@ -40,4 +40,21 @@ describe('runNativeCommand', () => {
     expect(failure).toBeInstanceOf(Error)
     expect((failure as { code?: unknown }).code).toBe('ABORT_ERR')
   })
+
+  it('honors a custom maxBuffer bound instead of the 1 MiB default', async () => {
+    const big = await runNativeCommand(
+      node,
+      ['-e', 'process.stdout.write("x".repeat(1_200_000))'],
+      new AbortController().signal,
+      { maxBuffer: 2_000_000 },
+    )
+    expect(big.stdout).toHaveLength(1_200_000)
+    const capped = await runNativeCommand(
+      node,
+      ['-e', 'process.stdout.write("x".repeat(1_200_000))'],
+      new AbortController().signal,
+      { maxBuffer: 512 },
+    ).then(() => { throw new Error('unexpected resolve') }, (error: unknown) => error)
+    expect(String(capped)).toMatch(/maxBuffer/)
+  })
 })

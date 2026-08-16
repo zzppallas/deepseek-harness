@@ -8,11 +8,18 @@
 
 import { execFile } from 'node:child_process'
 
+/** Options for one command run. */
+export interface NativeCommandOptions {
+  /** execFile maxBuffer in bytes; defaults to Node's 1 MiB. */
+  readonly maxBuffer?: number
+}
+
 /** Testable command boundary; native implementations never invoke a shell. */
 export type NativeCommandRunner = (
   command: string,
   args: readonly string[],
   signal: AbortSignal,
+  options?: NativeCommandOptions,
 ) => Promise<{ stdout: string; stderr: string }>
 
 /**
@@ -20,14 +27,15 @@ export type NativeCommandRunner = (
  * @param command - executable path or PATH name.
  * @param args - argv (never a shell string).
  * @param signal - caller/connection lifetime; abort terminates the child.
+ * @param options - optional execFile bounds.
  * @returns captured stdout/stderr on exit 0.
  */
-export const runNativeCommand: NativeCommandRunner = (command, args, signal) =>
+export const runNativeCommand: NativeCommandRunner = (command, args, signal, options) =>
   new Promise((resolve, reject) => {
     execFile(
       command,
       [...args],
-      { encoding: 'utf8', signal, windowsHide: true },
+      { encoding: 'utf8', signal, windowsHide: true, ...(options?.maxBuffer !== undefined ? { maxBuffer: options.maxBuffer } : {}) },
       (error, stdout, stderr) => {
         if (error !== null) {
           const failure = Object.assign(new Error(error.message, { cause: error }), {

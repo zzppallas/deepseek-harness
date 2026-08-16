@@ -34,6 +34,9 @@
       "path": "../../feedback/message-feedback"
     },
     {
+      "path": "../../orchestrator/orchestrator"
+    },
+    {
       "path": "../../host/plugin-inventory"
     },
     {

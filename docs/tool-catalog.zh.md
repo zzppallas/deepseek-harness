@@ -31,6 +31,7 @@
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
+| `@deepseek-ai/dsh-tool-orchestrator` | `orchestrator_capture_vcs`、`orchestrator_dispatch`、`orchestrator_freeze_candidate`、`orchestrator_freeze_goal`、`orchestrator_lifecycle`、`orchestrator_stage_report`、`orchestrator_start`、`orchestrator_state` | `ctx.tools`、`ctx.orchestrator`、`ctx.subagents`、`ctx.systemPrompt`、`ctx.llm` | `tool/call`、`central orchestrator pipeline mutations during execution`、`tool/result` | - | orchestrator 工具族驱动中央管线 sidecar（状态与工件存于 DSH 存储，绝不落入工作树）；orchestrator_dispatch 经配置的子代理 provider 派生角色子级，orchestrator_capture_vcs 经无 shell runner 边界采样 git HEAD 与脏区清单。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`、`session_event_search`、`session_event_trace`、`session_search`、`session_trace` | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionQuery`、`a calling Agent for workspace authority` | `tool/call`、`tool/result` | - | 这 5 个只读工具会隐藏提供方游标，并根据不可变的调用 agent 会话为每个结果授权。该包需要选择启用；需要强制截止时间或限制行内输出的组合还会挂载通用超时或 spill 策略。 |
@@ -1180,6 +1181,308 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 来源：[`packages/lsp/tool-lsp/src/index.ts`](../packages/lsp/tool-lsp/src/index.ts)
 
 lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。
+
+<a id="deepseek-aidsh-tool-orchestrator"></a>
+
+## `@deepseek-ai/dsh-tool-orchestrator`
+
+### `orchestrator_capture_vcs`
+
+采样管线项目的版本控制状态（git HEAD + 脏区清单，无 shell）并绑定到管线：purpose baseline 锚定起点（仅限 goal 冻结前），purpose candidate 暂存锚供下一次 freeze_candidate 绑定。项目不是 git 工作树时响亮失败。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string",
+      "description": "Pipeline to bind the snapshot to."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "baseline | candidate."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "purpose"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_dispatch`
+
+为当前阶段派发一个角色子代理。按角色的 provider/model 路由来自部署配置；子级启动前，调用级覆盖会对照实时模型目录校验。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "description": "architect | reviewer | coder | coverage-reviewer | code-reviewer | qa | auditor."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Complete self-contained role prompt: goal anchor, stage inputs, stage duties, required output document."
+    },
+    "provider": {
+      "type": "string",
+      "description": "Optional provider override for this one dispatch."
+    },
+    "model": {
+      "type": "string",
+      "description": "Optional model override for this one dispatch."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "role",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_freeze_candidate`
+
+在 S3→S4 边界冻结实现候选（64-hex subject hash，例如工作区 manifest 聚合）；S4/S5/S6A 的 PASS 将审批绑定于它。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "subjectHash": {
+      "type": "string",
+      "description": "Lowercase 64-hex sha256 of the candidate subject."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "subjectHash"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_freeze_goal`
+
+定稿 S0 的 goal/task 草稿并冻结目标哈希。此后目标不可变；管线推进到 S1（FULL）或 S3（LITE）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string",
+      "description": "Final goal text (required when the draft needs edits)."
+    },
+    "task": {
+      "type": "string",
+      "description": "Final task brief."
+    }
+  },
+  "required": [
+    "pipelineId"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_lifecycle`
+
+作废或接替管线：revoke（完成后缺陷；指名修复管线）或 supersede（封印管线由后继取代）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "description": "revoke | supersede."
+    },
+    "successorId": {
+      "type": "string",
+      "description": "Successor pipeline id (supersede)."
+    },
+    "repairsPipeline": {
+      "type": "string",
+      "description": "Repairs pipeline id (revoke)."
+    }
+  },
+  "required": [
+    "pipelineId",
+    "action"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_stage_report`
+
+登记阶段工件与阶段裁决。PASS 推进；BLOCK/FAIL 按门禁规则回退（S4/S5/S6A 回退作废 candidate 与审批）；COMPLETE（仅 S6B）封印管线。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string",
+      "description": "S0..S6B being reported."
+    },
+    "verdict": {
+      "type": "string",
+      "description": "PASS | BLOCK | FAIL | COMPLETE."
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Artifacts to record into the stage before the verdict.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Artifact kind from the taxonomy."
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "content"
+        ]
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "description": "BLOCK items (required for BLOCK verdicts): level (Critical|Scoped), location, description.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "concession": {
+      "type": "object",
+      "description": "Optional registered concession when the verdict carries debt.",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "grantedBy": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": [
+    "pipelineId",
+    "phase",
+    "verdict"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_start`
+
+在 S0 创建一条 orchestrator 管线并起草 goal/task。在 orchestrator_freeze_goal 之前目标保持可编辑。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Short kebab-case pipeline name."
+    },
+    "mode": {
+      "type": "string",
+      "description": "FULL (six-role spine, default) or LITE (merged S1/S2, lighter S3)."
+    },
+    "riskClass": {
+      "type": "string",
+      "description": "LOW | STRUCTURAL | STATEFUL | CRITICAL (default LOW)."
+    },
+    "goal": {
+      "type": "string",
+      "description": "Verbatim goal text; quote the human request and the Definition of Done."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task brief: gate commands, boundaries, protocol surface."
+    }
+  },
+  "required": [
+    "name",
+    "goal"
+  ]
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+### `orchestrator_state`
+
+检查管线：按 id 取完整行（阶段裁决、派发模型、工件），或按项目根取摘要列表。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "pipelineId": {
+      "type": "string"
+    },
+    "projectRoot": {
+      "type": "string",
+      "description": "Filter for list mode."
+    }
+  }
+}
+```
+
+Source: [`packages/orchestrator/tool-orchestrator/src/index.ts`](../packages/orchestrator/tool-orchestrator/src/index.ts)
+
+orchestrator 工具族驱动中央管线 sidecar（状态与工件存于 DSH 存储，绝不落入工作树）；orchestrator_dispatch 经配置的子代理 provider 派生角色子级，orchestrator_capture_vcs 经无 shell runner 边界采样 git HEAD 与脏区清单。
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 

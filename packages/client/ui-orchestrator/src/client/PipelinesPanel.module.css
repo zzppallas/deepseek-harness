@@ -1,0 +1,239 @@
+.modal {
+  width: min(1080px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 64px));
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip,
+.chipActive {
+  border: 1px solid var(--dsh-border, #d0d4dd);
+  border-radius: 999px;
+  background: transparent;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chipActive {
+  background: var(--dsh-accent-soft, #e8f0fe);
+  border-color: var(--dsh-accent, #3572f4);
+  font-weight: 600;
+}
+
+.error {
+  color: #c0392b;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid #e5b4ae;
+  border-radius: 8px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr);
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+}
+
+.list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  border: 1px solid var(--dsh-border, #e3e6ec);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.empty {
+  color: var(--dsh-muted, #7a8190);
+  font-size: 12px;
+  padding: 12px;
+  text-align: center;
+}
+
+.row,
+.rowSelected {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  grid-template-areas: 'dot name time' 'dot meta time';
+  column-gap: 8px;
+  row-gap: 2px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.row:hover,
+.rowSelected {
+  background: var(--dsh-hover, #f2f4f8);
+}
+
+.rowSelected {
+  border-color: var(--dsh-accent, #3572f4);
+}
+
+.rowName {
+  grid-area: name;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  grid-area: meta;
+  font-size: 11px;
+  color: var(--dsh-muted, #7a8190);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTime {
+  grid-area: time;
+  font-size: 10px;
+  color: var(--dsh-muted, #9aa1ad);
+  align-self: center;
+  white-space: nowrap;
+}
+
+.detail {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--dsh-border, #e3e6ec);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.detailInner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.goalHash {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--dsh-muted, #7a8190);
+}
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stage {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--dsh-border, #e8ebf1);
+  padding-bottom: 6px;
+}
+
+.stage :global(.dot) {
+  align-self: center;
+}
+
+.stagePhase {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  min-width: 30px;
+}
+
+.stageStatus {
+  min-width: 90px;
+}
+
+.stageMeta {
+  color: var(--dsh-muted, #7a8190);
+  font-size: 11px;
+}
+
+.artifacts {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.artifact,
+.artifactActive {
+  border: 1px solid var(--dsh-border, #d0d4dd);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.artifactActive {
+  background: var(--dsh-accent-soft, #e8f0fe);
+  border-color: var(--dsh-accent, #3572f4);
+}
+
+.metaLine {
+  font-size: 11px;
+  color: var(--dsh-muted, #7a8190);
+}
+
+.viewer {
+  border: 1px solid var(--dsh-border, #e3e6ec);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.viewerHeader {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--dsh-border, #e3e6ec);
+  background: var(--dsh-hover, #f2f4f8);
+}
+
+.viewerBody {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
